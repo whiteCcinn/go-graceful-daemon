@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strconv"
 	"syscall"
@@ -13,17 +12,16 @@ import (
 )
 
 var (
-	TimeDeadLine = 10 * time.Second
-	appName      string
-	pidFile      string
-	pidVal       int
+	AppName      string
+	PidFile      string
+	PidVal       int
 )
 
-func init() {
+func Daemon() {
 	file, _ := filepath.Abs(os.Args[0])
 	appPath := filepath.Dir(file)
-	appName = filepath.Base(file)
-	pidFile = appPath + "/" + appName + ".pid"
+	AppName = filepath.Base(file)
+	PidFile = appPath + "/" + AppName + ".pid"
 	if os.Getenv("__Daemon") != "true" { //master
 		cmd := "start" //缺省为start
 		if l := len(os.Args); l > 1 {
@@ -32,27 +30,27 @@ func init() {
 		switch cmd {
 		case "start":
 			if isRunning() {
-				log.Printf("[%d] %s is running\n", pidVal, appName)
-			} else { //fork daemon进程
+				log.Printf("[%d] %s is running\n", PidVal, AppName)
+			} else { // fork daemon进程
 				if err := forkDaemon(); err != nil {
 					log.Fatal(err)
 				}
 			}
-		case "restart": //重启:
+		case "restart": // 重启:
 			if !isRunning() {
-				log.Printf("%s not running\n", appName)
+				log.Printf("%s not running\n", AppName)
 			} else {
-				log.Printf("[%d] %s restart now\n", pidVal, appName)
-				restart(pidVal)
+				log.Printf("[%d] %s restart now\n", PidVal, AppName)
+				restart(PidVal)
 			}
-		case "stop": //停止
+		case "stop": // 停止
 			if !isRunning() {
-				log.Printf("%s not running\n", appName)
+				log.Printf("%s not running\n", AppName)
 			} else {
-				syscall.Kill(pidVal, syscall.SIGTERM) //kill
+				syscall.Kill(PidVal, syscall.SIGTERM) //kill
 			}
 		case "-h":
-			fmt.Printf("Usage: %s start|restart|stop\n", appName)
+			fmt.Printf("Usage: %s start|restart|stop\n", AppName)
 		default: //其它不识别的参数
 			return //返回至调用方
 		}
@@ -62,15 +60,15 @@ func init() {
 	go handleSignals()
 }
 
-//检查pidFile是否存在以及文件里的pid是否存活
+//检查PidFile是否存在以及文件里的pid是否存活
 func isRunning() bool {
-	if mf, err := os.Open(pidFile); err == nil {
+	if mf, err := os.Open(PidFile); err == nil {
 		pid, _ := ioutil.ReadAll(mf)
-		pidVal, _ = strconv.Atoi(string(pid))
+		PidVal, _ = strconv.Atoi(string(pid))
 	}
 	running := false
-	if pidVal > 0 {
-		if err := syscall.Kill(pidVal, 0); err == nil { // 发一个信号为0到指定进程ID，如果没有错误发生，表示进程存活
+	if PidVal > 0 {
+		if err := syscall.Kill(PidVal, 0); err == nil { // 发一个信号为0到指定进程ID，如果没有错误发生，表示进程存活
 			running = true
 		}
 	}
@@ -79,7 +77,7 @@ func isRunning() bool {
 
 //保存pid
 func savePid(pid int) error {
-	file, err := os.OpenFile(pidFile, os.O_CREATE|os.O_WRONLY, os.ModePerm)
+	file, err := os.OpenFile(PidFile, os.O_CREATE|os.O_WRONLY, os.ModePerm)
 	if err != nil {
 		return err
 	}
@@ -88,29 +86,11 @@ func savePid(pid int) error {
 	return nil
 }
 
-//捕获系统信号
+// 捕获系统信号
 func handleSignals() {
-	signals := make(chan os.Signal)
-	signal.Notify(signals, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT)
-	var err error
-	for {
-		sig := <-signals
-		switch sig {
-		case syscall.SIGHUP: // 重启
-			//only deamon时不支持kill -HUP,因为可能监听地址会占用
-			log.Printf("[%d] %s stopped.", os.Getpid(), appName)
-			os.Remove(pidFile)
-			os.Exit(2)
-			if err != nil {
-				log.Fatalln(err)
-			}
-		case syscall.SIGINT:
-			fallthrough
-		case syscall.SIGTERM:
-			log.Printf("[%d] %s stop graceful", os.Getpid(), appName)
-			log.Printf("[%d] %s stopped.", os.Getpid(), appName)
-			os.Exit(1)
-		}
+	err := ServeSignals()
+	if err != nil {
+		log.Printf("Error: %s", err.Error())
 	}
 }
 
@@ -126,7 +106,7 @@ func forkDaemon() error {
 	if err != nil {
 		return err
 	}
-	log.Printf("[%d] %s start daemon\n", pid, appName)
+	log.Printf("[%d] %s start daemon\n", pid, AppName)
 	savePid(pid)
 	return nil
 }
@@ -135,15 +115,15 @@ func forkDaemon() error {
 func restart(pid int) {
 	syscall.Kill(pid, syscall.SIGHUP) //kill -HUP, daemon only时，会直接退出
 	fork := make(chan bool, 1)
-	go func() { // 循环，查看pidFile是否存在，不存在或值已改变，发送消息
+	go func() { // 循环，查看PidFile是否存在，不存在或值已改变，发送消息
 		for {
-			f, err := os.Open(pidFile)
+			f, err := os.Open(PidFile)
 			if err != nil || os.IsNotExist(err) { //文件已不存在
 				fork <- true
 				break
 			} else {
-				pidVal, _ := ioutil.ReadAll(f)
-				if strconv.Itoa(pid) != string(pidVal) {
+				PidVal, _ := ioutil.ReadAll(f)
+				if strconv.Itoa(pid) != string(PidVal) {
 					fork <- false
 					break
 				}
