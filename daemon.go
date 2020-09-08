@@ -12,16 +12,22 @@ import (
 )
 
 var (
-	AppName      string
-	PidFile      string
-	PidVal       int
+	AppName string
+	PidFile string
+	PidVal  int
 )
 
 func Daemon() {
 	file, _ := filepath.Abs(os.Args[0])
 	appPath := filepath.Dir(file)
 	AppName = filepath.Base(file)
-	PidFile = appPath + "/" + AppName + ".pid"
+	pidFile, exist := os.LookupEnv("GO_GRACEFUL_DAEMON_PID_PATH")
+	if !exist {
+		pidFile = appPath + "/" + AppName + ".pid"
+	} else {
+		pidFile += ".pid"
+	}
+	PidFile = pidFile
 	if os.Getenv("__Daemon") != "true" { //master
 		cmd := "start" //缺省为start
 		if l := len(os.Args); l > 1 {
