@@ -106,7 +106,7 @@ func forkDaemon() error {
 	os.Setenv("__Daemon", "true")
 	procAttr := &syscall.ProcAttr{
 		Env:   os.Environ(),
-		Files: []uintptr{os.Stdin.Fd(), os.Stdout.Fd(), os.Stderr.Fd()},
+// 		Files: []uintptr{os.Stdin.Fd(), os.Stdout.Fd(), os.Stderr.Fd()},
 	}
 	pid, err := syscall.ForkExec(os.Args[0], args, procAttr)
 	if err != nil {
